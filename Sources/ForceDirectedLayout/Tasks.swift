@@ -1,3 +1,6 @@
+///  Copyright © 2019 Nicolas Zinovieff. All rights reserved.
+///  See https://blog.krugazor.eu/2019/04/20/tasks-in-parallel/
+
 import Foundation
 import Dispatch
 

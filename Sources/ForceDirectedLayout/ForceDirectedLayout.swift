@@ -1,3 +1,6 @@
+///  Copyright © 2019 Nicolas Zinovieff. All rights reserved.
+///  Licence : MIT
+
 import UIKit
 
 extension UIView {
@@ -10,55 +13,82 @@ protocol ForceDirectedLayoutDelegate {
     func layoutDidFinish()
 }
 class ForceDirectedLayout : UICollectionViewLayout {
-    // in case you want to know
+    /// in case you want to know
     var delegate : ForceDirectedLayoutDelegate? = nil
     
     // maths
     var springStiffness : CGFloat = 0.02 // max(width,height)/1000 seems ok
     var electricCharge : CGFloat = 10 // max(width,height)/2 seems ok
     var cellSize : CGSize = CGSize(width: 20,height: 20) // obviously too small for real use
+    
+    /// Holds the components a generic force, to be computed from the other laws. Used mostly for summing all the forces
     struct Force {
+        /// The x component
         let dx: CGFloat
+        /// The y component
         let dy: CGFloat
+        
+        
+        /// Adds two forces together
+        /// - Parameter lhs: a force
+        /// - Parameter rhs: another force
         static func +(lhs: Force, rhs: Force) -> Force {
             return Force(lhs.dx+rhs.dx,lhs.dy+rhs.dy)
         }
         
+        /// Modulates a force
+        /// - Parameter lhs: a force
+        /// - Parameter rhs: the modulation factor
         static func /(lhs: Force, rhs: CGFloat) -> Force {
             return Force(lhs.dx/rhs, lhs.dy/rhs)
         }
         
+        /// Standard init, all variables
         init(_ x: CGFloat, _ y: CGFloat) {
             dx = x
             dy = y
         }
         
+        /// Helper for the angle in the plane
         var angle : CGFloat {
-            return CGFloat(atan2(Double(dx), Double(dy)))
+            return CGFloat(atan2(Double(dy), Double(dx)))
         }
         
+        /// Helper for the magnitude
         var magnitude : CGFloat {
             return sqrt(dx*dx+dy*dy)
         }
     }
     
+    /// Structure that represents our cell in our "physical" universe
     struct Node : Equatable, Hashable {
-        // each node is repulsed by other nodes and by the boundaries, and attracted to the center
+        /// the x position in the screen plane
         var x : CGFloat = 0
+        /// the y position in the screen plane
         var y : CGFloat = 0
-        let uuid = UUID() // for identification purposes
+        
+        /// for identification purposes
+        let uuid = UUID()
+        /// because we use it for a collection view
         var indexPath : IndexPath
         
+        /// standard initializer
         init(x px: CGFloat = 0, y py: CGFloat = 0, for idx: IndexPath) {
             x = px
             y = py
             indexPath = idx
         }
         
+        /// Equality check
+        /// - Parameter lhs: a node
+        /// - Parameter rhs: another node
         static func == (lhs: Node, rhs: Node) -> Bool {
             return lhs.uuid == rhs.uuid
         }
         
+        /// Calculates the attraction force to a point
+        /// - Parameter center: the point of attraction
+        /// - Parameter stiffness: the stiffness of the spring attaching the node to the center
         func attraction(center: CGPoint, stiffness: CGFloat) -> Force {
             // Hooke's Law: F = -k•∂ (∂ being the "ideal" distance minus the actual distance)
             let dx = x - center.x
@@ -83,13 +113,16 @@ class ForceDirectedLayout : UICollectionViewLayout {
             return Force(fx,fy)
         }
         
+        /// Calculates the repulsion force to other nodes
+        /// - Parameter others: all the nodes we are repulsed by
+        /// - Parameter charge: the "electric charge" of the nodes. No relation to actual physical values
         func repulsion(others: [Node], charge: CGFloat) -> Force {
             var totalForce = Force(0,0)
             for n in others.filter({ (on) -> Bool in
                 on.uuid != self.uuid // just in case
             }) {
                 // Coulomb’s Law; F = k(Q1•Q2/r²)
-                // Since we're dealing with arbitrary "charges" here, we'll simplify to F = C³/r2
+                // Since we're dealing with arbitrary "charges" here, we'll simplify to F = C³/r²
                 // We want repulsion (Q1=Q2) and not deal with big numbers, so that works
                 var dx = x - n.x
                 var dy = y - n.y
@@ -122,17 +155,28 @@ class ForceDirectedLayout : UICollectionViewLayout {
             return totalForce
         }
         
+        /// Computes the global force exerted on this node
+        /// - Parameter center: center of attraction
+        /// - Parameter otherNodes: all the other nodes to be repulsed by
+        /// - Parameter stiffness: the stiffness of the spring
+        /// - Parameter charge: the "electric charge" of the nodes. No relation to actual physical values
         func globalForce(center: CGPoint, otherNodes: [Node], stiffness: CGFloat, charge: CGFloat) -> Force {
             let a = attraction(center: center, stiffness: stiffness)
             let r = repulsion(others: otherNodes, charge: charge)
             return a + r
         }
         
+        /// Applies a force to a node
+        /// - Parameter lhs: the node
+        /// - Parameter rhs: the force
         static func +(lhs: Node, rhs: Force) -> Node {
             return Node(x: lhs.x+rhs.dx, y: lhs.y+rhs.dy, for: lhs.indexPath)
         }
     }
     
+    /// Takes a
+    /// - Parameter center: the point of attraction
+    /// - Parameter nodes: the current nodes
     func computeNewPositions(center: CGPoint, nodes: [Node]) -> (nodes: [Node], movement: CGFloat) {
         // if the total movement is less than threshold, will return nil
         var totalMovement : CGFloat = 0
@@ -161,6 +205,7 @@ class ForceDirectedLayout : UICollectionViewLayout {
     }
     
     
+    /// Collection view content size depends on the position of all the cells
     override var collectionViewContentSize: CGSize {
         var totalRect = CGRect(origin: CGPoint.zero, size: self.collectionView?.frame.size ?? CGSize.zero)
         for cachedA in cachedAttributes.values {
@@ -176,6 +221,7 @@ class ForceDirectedLayout : UICollectionViewLayout {
         return true // because the center changes...
     }
     
+    // For debug purposes, if needed
     fileprivate var speedLock = NSLock()
     var speeds = [CGFloat]()
     var avererageSpeed : CGFloat {
@@ -213,11 +259,11 @@ class ForceDirectedLayout : UICollectionViewLayout {
         speedLock.unlock()
     }
     
-    // Unfortunately, collectionView.layoutAttributesForItem doesn't seem to be caching the previous attributes
-    // We do it ourselves as a backup
+    /// Unfortunately, collectionView.layoutAttributesForItem doesn't seem to be caching the previous attributes
+    /// We do it ourselves as a backup
     fileprivate var cachedAttributes = [IndexPath:UICollectionViewLayoutAttributes]()
-    
-    // Since we cache the data ourselves, we need to cleanup if elements are removed
+
+    /// Since we cache the data ourselves, we need to cleanup if elements are removed
     override func prepare() {
         super.prepare()
         
@@ -237,7 +283,7 @@ class ForceDirectedLayout : UICollectionViewLayout {
         }
     }
     
-    // unfortunately, every node affects every other node, so we can't do partial updates
+    /// Unfortunately, every node affects every other node, so we can't do partial updates
     override func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? {
         var attributes : [UICollectionViewLayoutAttributes] = []
         var nodes = [Node]()
@@ -276,7 +322,9 @@ class ForceDirectedLayout : UICollectionViewLayout {
                 }
             }
             
+            // debug
             recordSpeed(nextIteration.movement)
+            print("Going at roughly \(avererageSpeed)px/s on average")
             
             // if it's still moving, keep going
             if nextIteration.movement > 0.3 { // subpixel animation

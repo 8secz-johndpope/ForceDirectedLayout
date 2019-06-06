@@ -271,13 +271,13 @@ class ForceDirectedLayout : UICollectionViewLayout {
             cachedAttributes.removeAll()
             return
         }
-        let sectionCount = collection.dataSource?.numberOfSections?(in: collection) ?? 0
+        let sectionCount = collection.dataSource?.numberOfSections?(in: collection) ?? 1
         var rowCounts = [Int:Int]()
         for s in 0..<sectionCount {
             rowCounts[s] = collection.dataSource?.collectionView(collection, numberOfItemsInSection: s) ?? 0
         }
         for removed in cachedAttributes.keys.filter({ (idx) -> Bool in
-            return idx.section < sectionCount && idx.row < (rowCounts[idx.section] ?? 0) // hence the dictionary, no index out of bounds
+            return idx.section >= sectionCount || idx.row >= (rowCounts[idx.section] ?? 0) // hence the dictionary, no index out of bounds
         }) {
             cachedAttributes.removeValue(forKey: removed)
         }
